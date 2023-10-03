@@ -124,11 +124,11 @@ function provideBuffer() {
         -0.4, 0.4,
         0.4, 0.7,
         -0.4, 0.7
-    ]);
+    ]); // init the buffer, the vertices are listed above
     
-    vertexBuffer = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, rectangleVertices, gl.STATIC_DRAW);
+    vertexBuffer = gl.createBuffer();   // create a buffer
+    gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);   // bind the buffer to gl's arraybuffer
+    gl.bufferData(gl.ARRAY_BUFFER, rectangleVertices, gl.STATIC_DRAW); // supply the data using the vectices
 }
 
 /**
@@ -146,23 +146,24 @@ function draw(seconds) {
     // Bind the buffer
     gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer)
 
-    // Get the attribute location, enable it
-    const position = gl.getAttribLocation(program, 'aPosition')
-    gl.enableVertexAttribArray(position)
+    // enable in buffer
+    gl.enableVertexAttribArray(0)
     
-    
+    // rotating, tranlating, and scaling matrices
     let scaleConstant = 0.1+Math.abs(Math.cos(seconds)/2)
     let transCosntant = Math.cos(seconds*3)/2
     let scaleMat = m4scale(scaleConstant, scaleConstant, scaleConstant)
     let rotMat = m4rotZ(seconds*2)
     let transitMat = m4trans(Math.cos(seconds)*transCosntant, Math.cos(seconds*2)*transCosntant, transCosntant)
+
+    // output to vertshader (uniforms)
     gl.uniformMatrix4fv(program.uniforms.transMat, false, m4mul(transitMat, m4mul(scaleMat, rotMat)))
-    gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 0, 0)
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0)
 
     // Draw the rectangle
     gl.drawArrays(gl.TRIANGLES, 0, count)
 }
 
-document.addEventListener('DOMContentLoaded', setup)
+window.addEventListener('load', setup)
 
 
