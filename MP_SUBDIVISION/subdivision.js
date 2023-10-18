@@ -1,15 +1,42 @@
 
 /* global var declaration */
 let Identity = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
-let view = m4view([10,5,0], [0, 0, 0], [0, 1, 0])
-let curDir = [0,1,0];
-let curTrans = [0,0,0];
+
+let view = m4view([10,0,0], [0, 0, 0], [0, 1, 0])
+let lightDir = normalize([1,0,-1])
+let half = normalize(add(lightDir, [0,0,0]))
+
+var phi = (1 + Math.sqrt(5)) / 2;
+var icosahedron = {
+    "triangles": [
+        [0,1,4], [0,6,1], [1,11,9], [1,6,11], [0,10,6], [0,8,10], [0,4,8], [1,9,4],
+        [4,9,5], [4,5,8], [6,10,7], [6,7,11],
+        [2,3,7], [2,5,3], [2,7,10], [3,11,7], [11,3,9], [2,10,8], [3,5,9], [2,8,5]
+    ],
+  "attributes": [
+    // Define the positions of vertices
+    [
+      [1, phi, 0], // 0
+      [-1, phi, 0],
+      [1, -phi, 0], // 2
+      [-1, -phi, 0],
+      [0, 1, phi], // 4
+      [0, -1, phi],
+      [0, 1, -phi], // 6
+      [0, -1, -phi],
+      [phi, 0, 1], // 8
+      [-phi, 0, 1],
+      [phi, 0, -1], // 10
+      [-phi, 0, -1]
+    ]
+  ]
+};
 /**
  * Fetches, reads, and compiles GLSL; sets two global variables; and begins
  * the animation
  */
 async function setup() {
-    window.gl = document.querySelector('canvas').getContext('webgl2', {antialias:false, depth:true, preserveDrawingBuffer:true})
+    window.gl = document.querySelector('canvas').getContext('webgl2', {antialias: false, depth: true, preserveDrawingBuffer: true})
     if (!gl) {
         console.error("WebGL2 not supported or context creation failed");
         return;
@@ -18,9 +45,13 @@ async function setup() {
     const vs = await fetch('vertshader.glsl').then(res => res.text())
     const fs = await fetch('fragshader.glsl').then(res => res.text())
     window.program = compile(vs,fs)
-    window.geomT = setupGeometry(tetrahedron)
-    window.geomO = setupGeometry(octahedron)
+    addNormal(icosahedron)
+    window.geomI = setupGeometry(icosahedron)
     gl.enable(gl.DEPTH_TEST)
+    gl.enable(gl.BLEND)
+    gl.enable(gl.CULL_FACE)
+    gl.cullFace(gl.BACK)
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
     fillScreen()
     tick(0) // <- ensure this function is called only once, at the end of setup
 }
@@ -131,7 +162,7 @@ function setupGeometry(geom) {
         provideBuffer(data, i)
     }
 
-    var indices = new Uint16Array(geom.triangles)
+    var indices = new Uint16Array(geom.triangles.flat())
     var indexBuffer = gl.createBuffer()
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer)
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW) 
@@ -145,27 +176,31 @@ function setupGeometry(geom) {
 
 }
 
-var tetrahedron = 
-{"triangles" : 
-    [0,1,2, 0,2,3, 0,3,1, 1,2,3],
- "attributes" : [   // positions
-                    [[1,1,1], [-1,-1,1], [-1,1,-1], [1,-1,-1]],
-                    // colors
-                    [[1,1,1], [0,0,1], [0,1,0], [1,0,0]]
-                ]
+
+function addNormal(geom) {
+    let ni = geom.attributes.length
+    geom.attributes.push([])
+    for (let i = 0; i < geom.attributes[0].length; i+=1) {
+        // geom.attributes[ni].push(geom.attributes[0][i])
+        geom.attributes[ni].push([0,0,0])
+    }
+    for (let i = 0; i < geom.triangles.length; i += 1) {
+        let p0 = geom.attributes[0][geom.triangles[i][0]]
+        let p1 = geom.attributes[0][geom.triangles[i][1]]
+        let p2 = geom.attributes[0][geom.triangles[i][2]]
+        let e1 = sub(p1,p0)
+        let e2 = sub(p2,p0)
+        let n = cross(e1,e2)
+
+        geom.attributes[ni][geom.triangles[i][0]] = add(geom.attributes[ni][geom.triangles[i][0]], n)
+        geom.attributes[ni][geom.triangles[i][1]] = add(geom.attributes[ni][geom.triangles[i][1]], n)
+        geom.attributes[ni][geom.triangles[i][2]] = add(geom.attributes[ni][geom.triangles[i][2]], n)
+    }
+    for (let i = 0; i < geom.attributes[0].length; i+=1) {
+        geom.attributes[ni][i] = normalize(geom.attributes[ni][i])
+    }
+
 }
-
-
-var octahedron = 
-{"triangles" : 
-    [0,1,2, 0,2,3, 0,3,4, 0,4,1, 5,1,4, 5,4,3, 5,3,2, 5,2,1],
- "attributes" : [   // positions
-                    [[1,0,0],[0,1,0],[0,0,1],[0,-1,0],[0,0,-1],[-1,0,0]],
-                    // colors
-                    [[1,0.5,0.5],[0.5,1,0.5],[0.5,0.5,1],[0.5,0,0.5],[0.5,0.5,0],[0,0.5,0.5]]
-                ]
-}
-
 
 /**
  * Clears the screen, sends two uniforms to the GPU, and asks the GPU to draw
@@ -175,17 +210,19 @@ var octahedron =
  * @param {Number} seconds - the number of seconds since the animation began
  */
 function draw(seconds) {
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
     gl.useProgram(program)
     gl.uniformMatrix4fv(program.uniforms.p, false, window.p)
-    
-    for (let i = 0; i < 3; i+=1) {
-        curTrans[i] += curDir[i] * 0.01
-    }
 
-    let m = m4trans(...curTrans)
-    gl.uniformMatrix4fv(program.uniforms.mv, false, m4mul(view, m))
-    gl.bindVertexArray(geomO.vao)
-    gl.drawElements(geomO.mode, geomO.count, geomO.type, 0) // Draw
+    gl.uniform3fv(program.uniforms.lightDir, lightDir)
+    gl.uniform3fv(program.uniforms.halfway, half)
+
+    let m = m4rotY(seconds)
+    gl.uniformMatrix4fv(program.uniforms.mv, false, m4mul(view,m))
+    gl.uniformMatrix4fv(program.uniforms.m, false, m)
+
+    gl.bindVertexArray(geomI.vao)
+    gl.drawElements(geomI.mode, geomI.count, geomI.type, 0) // Draw
 }
 
 function fillScreen() {
@@ -199,10 +236,8 @@ function fillScreen() {
     canvas.style.height = ''
     if (window.gl) {
         gl.viewport(0,0,canvas.width, canvas.height)
-        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT) 
-        window.p = m4perspNegZ(0.1, 20, 1.5, canvas.width, canvas.height)
-    }
-     
+        window.p = m4perspNegZ(0.1, 10, 1.5, canvas.width, canvas.height)
+    }   
 }
 
 const m4mulScalar = (m, c) => {
@@ -213,26 +248,12 @@ const m4mulScalar = (m, c) => {
 
 window.addEventListener('load', setup)
     
-window.addEventListener('keydown', (event) => {
-    if (event.key === "q") { // Check if the 'a' key has been pressed
-        console.log('q')
-        curDir = [-1,0,0]
-    } else if (event.key === "e") {
-        console.log('e')
-        curDir = [1,0,0]
-    } else if (event.key === "a") {
-        console.log('a')
-        curDir = [0,0,1]
-    } else if (event.key === "d") {
-        console.log('d')
-        curDir = [0,0,-1]
-    } else if (event.key === "w") {
-        console.log('w')
-        curDir = [0,1,0]
-    } else if (event.key === "s") {
-        console.log('s')
-        curDir = [0,-1,0]
-    } 
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelector('#submit').addEventListener('click', event => {
+        const rounds = Number(document.querySelector('#rounds').value);
+        console.log("Rounds:", rounds);
+    })
 })
+
 
 
