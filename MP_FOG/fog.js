@@ -17,6 +17,7 @@ const MAX_PITCH = Math.PI / 2 - 0.1
 window.keysBeingPressed = {}
 /* ------------------FOG---------------------*/
 let fogEnabled = true; 
+let fogKeyDown = false;
 let previousFogDensity; 
 let fogDensity = 1;
 let fogColor = [1,1,1]
@@ -220,8 +221,9 @@ function draw(seconds) {
     } else if (keysBeingPressed['h']) {
         fogDensity *= 1.25;
         console.log('h')
-    } else if (keysBeingPressed['f']) {
-        console.log('f')
+    } else if (keysBeingPressed['f'] && !fogKeyDown) {
+        fogKeyDown = true;
+        console.log('f', fogKeyDown)
         if (fogEnabled) {
             previousFogDensity = fogDensity;
             fogDensity = 0.0;
@@ -229,6 +231,8 @@ function draw(seconds) {
             fogDensity = previousFogDensity;
         }
         fogEnabled = !fogEnabled;
+    } else if (!keysBeingPressed['f'] && fogKeyDown) {
+        fogKeyDown = false;
     }
 
     // calculating view mat
