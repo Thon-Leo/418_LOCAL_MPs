@@ -266,25 +266,27 @@ function loadOBJFile(fileName) {
 
 
             // log
-            // console.log('vertices: ', vertices)
-            // console.log('tex'textureCoords)
-            // console.log('normals: ', normals)
-            // console.log('faces: ', faces)
+            console.log('vertices: ', vertices)
+            console.log('text: ', textureCoords)
+            console.log('normals: ', normals)
+            console.log('faces: ', faces)
 
 
             // set up obj
             obj.triangles = faces
             obj.attributes[0] = vertices
+
             if (textureCoords.length != 0) {
                 obj.attributes.push(textureCoords)
             } else {
                 let verticesColors = new Array(vertices.length).fill().map(() => [.8, .8, .8, 1]);
                 obj.attributes.push(verticesColors)
             }
+
             if (normals.length != 0) {
                 obj.attributes.push(normals)
             } else {
-                console.log(obj)
+                // console.log(obj)
                 addNormal(obj)
             }
             window.objGeom = setupGeometry(obj)
@@ -301,11 +303,17 @@ function loadOBJFile(fileName) {
  * @param {*} objText 
  * @returns 
  */
-function parseOBJ(objText) {
-    let vertices = [];
-    let textureCoords = [];
-    let normals = [];
-    let faces = [];
+function parseOBJ(objText) {   
+    let textureIdx = []; // temp texturecoord buffer
+    let normalIdx = []; // temp normals buffer
+
+    let faces = []; // final triangles
+    let vertices = [];  // final vertices coords
+    let textureCoords = []; // final textCoords, it should has the same length as vertices
+    let normals = []; // final normals, it should has the same length as vertices
+
+    let vnFlag = false; // if there is normal supplied, set this to true
+    let vtFlag = false; // if there is texture supplied, set this to true
 
     // parse it
     let lines = objText.split('\n');
@@ -317,20 +325,62 @@ function parseOBJ(objText) {
             // some stupid sanity checks
             if (vertexCoordinates.length > 3)
                 vertexCoordinates = [vertexCoordinates[0], vertexCoordinates[1], vertexCoordinates[2]]
-            vertices.push(vertexCoordinates)
-        } else if (line.startsWith('vn ')) { // Handle normal line
+            vertices.push(vertexCoordinates.flat())
+
+        } else if (line.startsWith('vn ')) { // Push normals into tmp buffer
+            vnFlag = true
+            normals = new Array(vertices.length)
+
             let normal = line.split(/\s+/).slice(1).map(Number)
-            normals.push(normal)
-        } else if (line.startsWith('vt ')) { // Handle texture coordinate line
+            normalIdx.push(normal)
+
+        } else if (line.startsWith('vt ')) { // Push textures into temp buffer
+            vtFlag = true
+            textureCoords = new Array(vertices.length)
             continue
+
         } else if (line.startsWith('f ')) {
-            let face = line.substring(2).split(' ').map(faceStr => {
-                return faceStr.split('/').map(numStr => parseInt(numStr, 10) - 1);
+            let faceIdx = line.substring(2).trim().split(' ').map(faceStr => {
+                return faceStr.split('/').filter(str => str !== '').map(numStr => parseInt(numStr, 10) - 1);
             });
-            // some stupid sanity checks
-            if (face.length > 3)
-                face = [face[1], face[2], face[3]]
-            faces.push(face);
+  
+            faceIdx = createGroups(faceIdx)
+            
+            for (const faceGroup of faceIdx) {
+              
+                if (faceGroup[0].length == 1) {
+                    // no vn and vt
+                    faces.push(faceGroup.flat());
+                } else if (vnFlag && vtFlag) {
+                    // contains face, texture, normal
+                    let face = []
+                    for (const vertex of faceGroup) {
+                        face.push(vertex[0])
+                        textureCoords[vertex[0]] = textureIdx[vertex[1]]
+                        normals[vertex[0]] = normalIdx[vertex[2]]
+                    }
+                    faces.push(face)
+                    
+                } else if (vnFlag) {
+                    // contains face and normal
+                    let face = []
+                    for (const vertex of faceGroup) {
+                        face.push(vertex[0])
+                        normals[vertex[0]] = normalIdx[vertex[1]]
+                    }
+                    faces.push(face)
+
+                } else if (vtFlag) {    
+                    // contains face and texture
+                    let face = []
+                    for (const vertex of faceGroup) {
+                        face.push(vertex[0])
+                        textureCoords[vertex[0]] = textureIdx[vertex[1]]
+                    }
+                    faces.push(face)
+
+                }
+            }
         }
     }
 
@@ -402,6 +452,24 @@ function distanceBetweenVertices(vertexA, vertexB) {
     );
 }
 
+function createGroups(line) {
+    // Split the line by spaces and ignore the first element ('f')
+    let groups = [];
+    if (line.length < 4) {
+        groups.push(line);
+        return groups;
+    }
+    // Loop through the elements, skipping the last two (since they can't form a full group)
+    for (let i = 0; i < line.length - 2; i++) {
+        // Create a group with the first element and two consecutive elements
+        let group = [line[0], line[i + 1], line[i + 2]];
+        groups.push(group);
+    }
+
+    return groups;
+}
+
+
 function multiplyArrayByScalar(array, scalar) {
     return array.map(vertex => vertex.map(component => component * scalar));
 }
@@ -426,7 +494,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
         if (objFileName !== '') {
             loadOBJFile(objFileName);
-
             // if (imagePath !== '') {
             //     loadTextureMap(imagePath);
             // }
